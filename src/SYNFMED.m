@@ -169,6 +169,10 @@ RXNBADDATA ;;
  ;;1366342;1366343
  ;;1536586;1534809
  ;;1803932;311282
+ ;;243670;318272
+ ;;235389;198043
+ ;;1049504;1049502
+ ;;1535362;245593
  ;;
 ETSCONV(RXN) ; [Private] Convert RxNorm CUI for non SCD to SCD drug using ETS
  N SUC S SUC=$$GETDATA^ETSRXN(RXN)
@@ -264,9 +268,10 @@ MATCHVM(VUIDS) ; [Public] Match delimited list of VUIDs to delimited set of drug
  ;
  ;
 MATCHV1(VUID) ; [Public] Match a single VUID to a set of drugs.
- N VAP S VAP=$$VUI2VAP(VUID) ; says it's supposed to be plural, but that's not possible??
- I 'VAP S $EC=",U-VUID-SHOULD-NOT-BE-MISSING,"
- N MEDS S MEDS=$$VAP2MED(VAP)
+ N VAPS S VAPS=$$VUI2VAP(VUID) ; a VUID can map to more than one VA Product (e.g. 4003067)
+ I 'VAPS S $EC=",U-VUID-SHOULD-NOT-BE-MISSING,"
+ N MEDS,I,M S MEDS=""
+ F I=1:1:$L(VAPS,U) S M=$$VAP2MED($P(VAPS,U,I)) I M'="" S MEDS=MEDS_$S(MEDS="":"",1:U)_M
  QUIT MEDS
  ;
 VUI2VAP(VUID) ; $$ Public - Get VA Product IEN(s) from VUID
@@ -291,7 +296,7 @@ VAP2MED(VAPROD) ; $$ Public - Get Drug(s) using VA Product IEN
  S PN=$P(^PSNDF(50.68,VAPROD,0),"^"),PN1=$E(PN,1,30)
  N P50 S P50=0 ; looper through VAPN index which is DRUG file entry
  F  S P50=$O(^PSDRUG("VAPN",PN1,P50)) Q:'P50  D  ; for each text match
- . I $P(^PSDRUG(P50,"ND"),"^",3)=VAPROD S MEDS=$G(MEDS)_P50_U  ; check that the VA PRODUCT pointer is the same as ours.
+ . I $P($G(^PSDRUG(P50,"ND")),"^",3)=VAPROD S MEDS=$G(MEDS)_P50_U  ; check that the VA PRODUCT pointer is the same as ours.
  S:MEDS MEDS=$E(MEDS,1,$L(MEDS)-1) ; remove trailing ^
  Q MEDS
  ;
