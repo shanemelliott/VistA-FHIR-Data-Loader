@@ -488,6 +488,124 @@ WRITERXRXN(PSODFN,RXNCUI,RXDATE) ; [$$/D Public] Create a new prescription for a
  D WRITERXPS(PSODFN,DRUG,RXDATE)
  QUIT
  ;
+MERGERX(PSODFN,RXNCUI,RXDATE) ; [$$ Public] Like WRITERXRXN, but a repeat order for a drug the patient already has is merged into the current Rx
+ ; Input: PSODFN = DFN; RXNCUI = RxNorm CUI (as WRITERXRXN); RXDATE = order date/time, orders in date order
+ ; A repeat order for the same drug (the current Rx is the latest one filed in this load):
+ ;  - on or after the next possible refill date (last fill + days supply - 10), Rx not expired, refills left: filed as a refill on the order date
+ ;  - before the next possible refill date: dropped as a duplicate
+ ;  - otherwise (expired, or no refills left): starts a new Rx
+ ; State is ^TMP("SYNRXMRG",$J,DFN,drug); kill ^TMP("SYNRXMRG",$J,DFN) before each patient load.
+ ; $$ Output: Prescription Number (not IEN) or -1^error message or -2^error message
+ N RXNCDCUI S RXNCDCUI=$$RXNCONV(RXNCUI)
+ I 'RXNCDCUI Q -2_U_"RxNorm CUI "_RXNCUI_" is not a valid RxNorm. Please check using RxNav or similar"
+ N DRUG S DRUG=$$ADDDRUG(RXNCDCUI)
+ I 'DRUG Q -1_U_"RxNorm CUI "_RXNCUI_" could not be resolved into a drug."
+ S DRUG=$P(DRUG,U)
+ N DAY S DAY=$P(RXDATE,".")
+ N CUR S CUR=+$G(^TMP("SYNRXMRG",$J,PSODFN,DRUG))
+ N MRGD S MRGD=0
+ I CUR,$D(^PSRX(CUR,0)) D  I MRGD Q $P(^PSRX(CUR,0),U)
+ . N DAYS,NUM,I,LASTDAY,NEXT,EXP
+ . S DAYS=+$P(^PSRX(CUR,0),U,8)
+ . S EXP=+$P($G(^PSRX(CUR,2)),U,6)
+ . I EXP,DAY>EXP Q
+ . S NUM=0,I=0 F  S I=$O(^PSRX(CUR,1,I)) Q:'I  S NUM=I
+ . I NUM'<$P(^PSRX(CUR,0),U,9) Q
+ . S LASTDAY=$P($P($G(^PSRX(CUR,3)),U),".")
+ . S:'LASTDAY LASTDAY=$P($P($G(^PSRX(CUR,2)),U,2),".")
+ . S NEXT=$$FMADD^XLFDT(LASTDAY,DAYS-10)
+ . I DAY<NEXT S MRGD=1 Q
+ . D REFILL(CUR,NUM+1,DAY,DAY)
+ . S MRGD=1
+ N RXN S RXN=$$WRITERXPS(PSODFN,DRUG,RXDATE)
+ S ^TMP("SYNRXMRG",$J,PSODFN,DRUG)=$O(^PSRX("B",RXN,0))
+ Q RXN
+ ;
+REFILL(RXIEN,NUM,FILLDATE,RELEASED) ; [Public] File a refill on an existing Rx at a past date, print its label, release it, then set its release date/time
+ ; Same calls as the Refill action of PSO LM BACKDOOR ORDERS (EN^PSOR52), without its 6 month limit on the fill date
+ ; Input: RXIEN = Rx IEN (file 52); NUM = refill number (last + 1); FILLDATE, RELEASED = FileMan dates
+ N PSOSITE,PSOPAR,PSOPAR7,PSOSYS,PSODTCUT,PSOPRPAS,PSOREF,PSORX,RXFL,PPL,PDUZ,POERR,RXP,PSRH,PSIN
+ N IOP,%ZIS,FDA,DIERR,SYNPHARM
+ S PSOSITE=$$PSOSITE^SYNINIT()
+ S PSOPAR=$G(^PS(59,PSOSITE,1)),PSOPAR7=$G(^PS(59,PSOSITE,"IB")),PSOSYS=$G(^PS(59.7,1,40.1)) D CUTDATE^PSOFUNC
+ S SYNPHARM=$$PHARM^SYNINIT()
+ S PSOREF("IRXN")=RXIEN
+ S PSOREF("RX0")=^PSRX(RXIEN,0),PSOREF("RX2")=$G(^PSRX(RXIEN,2)),PSOREF("RX3")=$G(^PSRX(RXIEN,3))
+ S PSOREF("STA")=+$G(^PSRX(RXIEN,"STA"))
+ S PSOREF("NUMBER")=NUM,PSOREF("FILL DATE")=FILLDATE
+ S PSOREF("LAST REFILL DATE")=$P(PSOREF("RX3"),U)
+ S PSOREF("MAIL/WINDOW")="W",PSOREF("PHARMACIST")=SYNPHARM,PSOREF("CLERK CODE")=SYNPHARM
+ D EN^PSOR52(.PSOREF)
+ S PSIN=+$P($G(^PS(59.7,1,49.99)),U,2)
+ S IOP="NULL"
+ S %ZIS=0
+ D ^%ZIS U IO
+ I $D(%WNULL) S IO=%WNULL U %WNULL
+ S PPL=RXIEN_","
+ S PDUZ=SYNPHARM
+ D DQ^PSOLBL
+ S POERR=1
+ S RXP=RXIEN
+ S PSRH=SYNPHARM
+ D BATCH^PSODISP
+ I '$D(%WNULL) D ^%ZISC
+ S FDA(52.1,NUM_","_RXIEN_",",17)=RELEASED
+ D FILE^DIE("","FDA")
+ I $D(DIERR) S $EC=",U-UPDATE-FAILED,"
+ Q
+ ;
+MEDDEF(DRUG) ; [$$ Public] Days^refills^quantity^sig for a drug by name or VA class, or "" to keep the loader defaults
+ ; Input: DRUG = Drug (file 50) IEN
+ ; Rows are in MEDDEFNAME (drug name contains the key) and MEDDEFCLASS (VA class; a key ending in * is a prefix).
+ ; Row: key^days^refills^doses per day^fixed quantity^sig. A fixed quantity wins over days x doses per day.
+ ; Name rows are tried first. Class rows are skipped for injectables, patches, rings, implants and inserts.
+ N NAME,CLASS,ROW,KEY,I,FOUND,DAYS,QTY
+ S NAME=$$UP^XLFSTR($$GET1^DIQ(50,DRUG_",",.01))
+ S CLASS=$$GET1^DIQ(50,DRUG_",",2)
+ S FOUND=""
+ F I=1:1 S ROW=$P($T(MEDDEFNAME+I),";;",2) Q:ROW=""  I NAME[$P(ROW,U) S FOUND=$P(ROW,U,2,6) Q
+ I FOUND="",CLASS]"",NAME'["INJ",NAME'["PATCH",NAME'["RING",NAME'["IMPLANT",NAME'["INSERT" D
+ . F I=1:1 S ROW=$P($T(MEDDEFCLASS+I),";;",2) Q:ROW=""  D  Q:FOUND]""
+ . . S KEY=$P(ROW,U)
+ . . I KEY=CLASS S FOUND=$P(ROW,U,2,6) Q
+ . . I $E(KEY,$L(KEY))="*",$E(CLASS,1,$L(KEY)-1)=$E(KEY,1,$L(KEY)-1) S FOUND=$P(ROW,U,2,6)
+ I FOUND="" Q ""
+ S DAYS=$P(FOUND,U),QTY=$P(FOUND,U,4)
+ I QTY="" S QTY=DAYS*($P(FOUND,U,3)+0)
+ Q DAYS_U_$P(FOUND,U,2)_U_QTY_U_$P(FOUND,U,5)
+ ;
+MEDDEFT(DRUG) ; [Public] Show what MEDDEF returns for a drug IEN (use on dev to check the VA class lookup)
+ W !,$$GET1^DIQ(50,DRUG_",",.01),"  class=",$$GET1^DIQ(50,DRUG_",",2),"  ->  ",$$MEDDEF(DRUG),!
+ Q
+ ;
+MEDDEFNAME ;;
+ ;;INSULIN^30^5^^1^INJECT 20 UNITS UNDER THE SKIN TWICE A DAY BEFORE MEALS
+ ;;SEMAGLUTIDE^30^3^^1^INJECT ONE DOSE UNDER THE SKIN ONCE A WEEK
+ ;;DULAGLUTIDE^30^3^^1^INJECT ONE DOSE UNDER THE SKIN ONCE A WEEK
+ ;;TIRZEPATIDE^30^3^^1^INJECT ONE DOSE UNDER THE SKIN ONCE A WEEK
+ ;;LIRAGLUTIDE^30^3^^1^INJECT ONE DOSE UNDER THE SKIN ONCE A DAY
+ ;;FENTANYL^30^0^^10^APPLY ONE PATCH TO THE SKIN EVERY 72 HOURS
+ ;;CARVEDILOL^90^3^2^^TAKE ONE TABLET BY MOUTH TWICE A DAY WITH FOOD
+ ;;METOPROLOL TARTRATE^90^3^2^^TAKE ONE TABLET BY MOUTH TWICE A DAY
+ ;
+MEDDEFCLASS ;;
+ ;;CV800^90^3^1^^TAKE ONE TABLET BY MOUTH EVERY DAY
+ ;;CV805^90^3^1^^TAKE ONE TABLET BY MOUTH EVERY DAY
+ ;;CV350^90^3^1^^TAKE ONE TABLET BY MOUTH EVERY EVENING
+ ;;CV701^90^3^1^^TAKE ONE TABLET BY MOUTH EVERY MORNING
+ ;;CV702^90^3^1^^TAKE ONE TABLET BY MOUTH EVERY MORNING
+ ;;CV100^90^3^1^^TAKE ONE TABLET BY MOUTH EVERY DAY
+ ;;BL117^90^3^1^^TAKE ONE TABLET BY MOUTH EVERY DAY
+ ;;CN609^90^3^1^^TAKE ONE BY MOUTH EVERY MORNING
+ ;;CN101^30^0^^30^TAKE ONE TABLET BY MOUTH EVERY 6 HOURS AS NEEDED FOR PAIN
+ ;;AM*^10^0^2^^TAKE ONE TABLET BY MOUTH TWICE A DAY UNTIL GONE
+ ;;CN103^30^0^^30^TAKE ONE TABLET BY MOUTH EVERY 6 HOURS AS NEEDED
+ ;;MS102^30^0^^30^TAKE ONE TABLET BY MOUTH EVERY 8 HOURS AS NEEDED WITH FOOD
+ ;;CV250^30^0^^1^PLACE ONE TABLET UNDER THE TONGUE AS NEEDED FOR CHEST PAIN
+ ;;RE101^30^5^^1^INHALE 2 PUFFS BY MOUTH AS DIRECTED
+ ;;RE102^30^5^^1^INHALE 2 PUFFS BY MOUTH AS DIRECTED
+ ;;HS200^84^3^1^^TAKE ONE TABLET BY MOUTH EVERY DAY
+ ;
 WRITERXPS(PSODFN,DRUG,RXDATE) ; [$$/D Public] Create a new prescription for a patient using drug IEN
  ; Input: PSODFN = DFN
  ; Input: DRUG = Drug (file 50) IEN
@@ -520,11 +638,12 @@ WRITERXPS(PSODFN,DRUG,RXDATE) ; [$$/D Public] Create a new prescription for a pa
  D SET^PSODRG
  M PSONEW=PSODRUG
  ;
- ; Days and refills
+ ; Days and refills (MEDDEF gives days^refills^quantity^sig by drug; no row keeps 30 days, 1 refill, quantity 30)
+ N SYNDEF S SYNDEF=$$MEDDEF(DRUG)
  S PSONEW("ISSUE DATE")=RXDATE
  S PSONEW("FILL DATE")=RXDATE
- S PSONEW("DAYS SUPPLY")=30
- S PSONEW("# OF REFILLS")=1
+ S PSONEW("DAYS SUPPLY")=$S(SYNDEF]"":$P(SYNDEF,U),1:30)
+ S PSONEW("# OF REFILLS")=$S(SYNDEF]"":$P(SYNDEF,U,2),1:1)
  ;
  ; Pharmacist here!
  S PSONEW("VERIFY")=1
@@ -544,13 +663,13 @@ WRITERXPS(PSODFN,DRUG,RXDATE) ; [$$/D Public] Create a new prescription for a pa
  ;
  ; Dosage
  S PSONEW("ENT")=1
- S PSONEW("DOSE",PSONEW("ENT"))="ONE TABLET DAILY"
+ S PSONEW("DOSE",PSONEW("ENT"))=$S($P(SYNDEF,U,4)]"":$P(SYNDEF,U,4),1:"ONE TABLET DAILY")
  ;
  ; Copay
  N PSOSCP S PSOSCP=""
  ;
  ; Quantity
- S PSONEW("QTY")=30 ; Non-sense number
+ S PSONEW("QTY")=$S(SYNDEF]"":$P(SYNDEF,U,3),1:30)
  ;
  ; Counseling
  N PSOCOU,PSOCOUU
@@ -596,6 +715,11 @@ WRITERXPS(PSODFN,DRUG,RXDATE) ; [$$/D Public] Create a new prescription for a pa
  N PSRH S PSRH=SYNPHARM
  D BATCH^PSODISP
  I '$D(%WNULL) D ^%ZISC
+ ;
+ ; BATCH^PSODISP stamps the release date/time as now; set it to the prescription date
+ N SYNFDA,SYNERR
+ S SYNFDA(52,SYNRXIEN_",",31)=RXDATE
+ D FILE^DIE("","SYNFDA","SYNERR")
  ;
  QUIT:$QUIT SYNRXN QUIT
  ;

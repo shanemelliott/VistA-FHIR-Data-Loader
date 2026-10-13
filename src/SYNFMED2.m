@@ -63,6 +63,7 @@ wsIntakeMeds(args,body,result,ien)      ; web service entry (post)
  . s result("meds",1,"log",1)="Error, patient not found.. terminating"
  ;
  new zi s zi=0
+ k ^TMP("SYNRXMRG",$J,dfn) ; per-load state of $$MERGERX^SYNFMED
  for  set zi=$order(@troot@(zi)) quit:+zi=0  do  ;
  . ;
  . ; define a place to log the processing of this entry
@@ -139,11 +140,11 @@ wsIntakeMeds(args,body,result,ien)      ; web service entry (post)
  . if $g(args("load"))=1 d  ; only load if told to
  . . if $g(ien)'="" if $$loadStatus("meds",zi,ien)=1 do  quit  ;
  . . . d log(jlog,"Meds already loaded, skipping")
- . . d log(jlog,"Calling WRITERXRXN^SYNFMED to add meds")
+ . . d log(jlog,"Calling MERGERX^SYNFMED to add meds")
  . . n RESTA
- . . S RESTA=$$WRITERXRXN^SYNFMED(dfn,rxnorm,fmOrderDateTime)
+ . . S RESTA=$$MERGERX^SYNFMED(dfn,rxnorm,fmOrderDateTime)
  . . m @eval@("meds",zi,"status")=RESTA
- . . d log(jlog,"Response from WRITERXRXN^SYNFMED is: "_RESTA)
+ . . d log(jlog,"Response from MERGERX^SYNFMED is: "_RESTA)
  . . d log(jlog,"Medication: "_rxnorm_" "_drugname)
  . . if RESTA>1 d  ; success
  . . . s @eval@("meds","status","loaded")=$g(@eval@("meds","status","loaded"))+1
