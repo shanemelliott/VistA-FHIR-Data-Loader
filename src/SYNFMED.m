@@ -613,7 +613,7 @@ DOSINGT(DRUG,SIG) ; [Public] Show what DOSING gives for a drug IEN and sig (use 
  Q
  ;
 ROUTEKEY ; Sig phrase^route names to try in MEDICATION ROUTES (#51.2), first one found wins
- ;;BY MOUTH^PO^ORAL
+ ;;BY MOUTH^ORAL (BY MOUTH)^ORAL^PO
  ;;UNDER THE TONGUE^SL^SUBLINGUAL
  ;
 SCHEDKEY ; Sig phrase^schedule names to try in ADMINISTRATION SCHEDULE (#51.1), first one found wins; longer phrases first
