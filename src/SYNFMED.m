@@ -578,6 +578,53 @@ MEDDEFT(DRUG) ; [Public] Show what MEDDEF returns for a drug IEN (use on dev to 
  W !,$$GET1^DIQ(50,DRUG_",",.01),"  class=",$$GET1^DIQ(50,DRUG_",",2),"  ->  ",$$MEDDEF(DRUG),!
  Q
  ;
+DOSING(DRUG,SIG,PSONEW) ; [$$ Public] Fill the structured dosage in PSONEW from the drug's strength and the sig text
+ ; Oral tablets and capsules only; "" when PSONEW(DOSE,DOSE ORDERED,UNITS,NOUN,VERB and, when found, ROUTE and SCHEDULE) was set,
+ ; otherwise the reason it was left alone (PSONEW is not touched then).
+ ; Input: DRUG = Drug (file 50) IEN; SIG = directions text, e.g. TAKE ONE TABLET BY MOUTH TWICE A DAY
+ N STR,UNIT,UPTR,DU,NOUN,CNT,W,SIGU,ROW,I,J,CAND,ROUTE,SCHED,VERB
+ S STR=$$GET1^DIQ(50,DRUG_",",901),UNIT=$$GET1^DIQ(50,DRUG_",",902)
+ I STR="" Q "no-strength"
+ I STR'?.N.1".".N Q "strength-not-numeric"
+ I UNIT="" Q "no-strength-unit"
+ S UPTR=$O(^PS(50.607,"B",UNIT,0)) I 'UPTR Q "unit-not-in-50.607"
+ S DU=$$UP^XLFSTR($$GET1^DIQ(50,DRUG_",",14.5))
+ S NOUN=$S(DU="TAB"!(DU="TABLET"):"TABLET",DU="CAP"!(DU="CAPSULE"):"CAPSULE",1:"")
+ I NOUN="" Q "not-oral-solid"
+ S SIGU=$$UP^XLFSTR(SIG),W=$P(SIGU," ",2)
+ S CNT=$S(W?1.N:+W,W="ONE":1,W="TWO":2,W="THREE":3,1:1)
+ S VERB=$P(SIGU," ")
+ S ROUTE=""
+ F I=1:1 S ROW=$P($T(ROUTEKEY+I),";;",2) Q:ROW=""  I SIGU[$P(ROW,U) D  Q:ROUTE
+ . F J=2:1:$L(ROW,U) S CAND=$P(ROW,U,J) I CAND]"" S ROUTE=$O(^PS(51.2,"B",CAND,0)) Q:ROUTE
+ S SCHED=""
+ F I=1:1 S ROW=$P($T(SCHEDKEY+I),";;",2) Q:ROW=""  I SIGU[$P(ROW,U) D  Q:SCHED]""
+ . F J=2:1:$L(ROW,U) S CAND=$P(ROW,U,J) I CAND]"",$O(^PS(51.1,"B",CAND,0)) S SCHED=CAND Q
+ S PSONEW("DOSE",1)=STR*CNT,PSONEW("DOSE ORDERED",1)=CNT,PSONEW("UNITS",1)=UPTR
+ S PSONEW("NOUN",1)=NOUN,PSONEW("VERB",1)=VERB
+ I ROUTE S PSONEW("ROUTE",1)=ROUTE
+ I SCHED]"" S PSONEW("SCHEDULE",1)=SCHED
+ Q ""
+ ;
+DOSINGT(DRUG,SIG) ; [Public] Show what DOSING gives for a drug IEN and sig (use on dev to check the lookups)
+ N PSONEW,WHY S WHY=$$DOSING(DRUG,$G(SIG,"TAKE ONE TABLET BY MOUTH EVERY DAY"),.PSONEW)
+ W !,$$GET1^DIQ(50,DRUG_",",.01),"  ->  ",$S(WHY]"":"skipped: "_WHY,1:"")
+ I WHY="" W ! ZWRITE PSONEW
+ Q
+ ;
+ROUTEKEY ; Sig phrase^route names to try in MEDICATION ROUTES (#51.2), first one found wins
+ ;;BY MOUTH^PO^ORAL
+ ;;UNDER THE TONGUE^SL^SUBLINGUAL
+ ;
+SCHEDKEY ; Sig phrase^schedule names to try in ADMINISTRATION SCHEDULE (#51.1), first one found wins; longer phrases first
+ ;;TWICE A DAY^BID
+ ;;THREE TIMES A DAY^TID
+ ;;FOUR TIMES A DAY^QID
+ ;;EVERY MORNING^QAM
+ ;;EVERY EVENING^QPM^QHS
+ ;;EVERY DAY^QDAY^DAILY^QD
+ ;;ONCE A DAY^QDAY^DAILY^QD
+ ;
 MEDDEFNAME ;;
  ;;INSULIN^30^5^^1^INJECT 20 UNITS UNDER THE SKIN TWICE A DAY BEFORE MEALS
  ;;SEMAGLUTIDE^30^3^^1^INJECT ONE DOSE UNDER THE SKIN ONCE A WEEK
@@ -664,6 +711,13 @@ WRITERXPS(PSODFN,DRUG,RXDATE) ; [$$/D Public] Create a new prescription for a pa
  ; Dosage
  S PSONEW("ENT")=1
  S PSONEW("DOSE",PSONEW("ENT"))=$S($P(SYNDEF,U,4)]"":$P(SYNDEF,U,4),1:"ONE TABLET DAILY")
+ ;
+ ; Free-text sig: PSON52 files the SIG1 multiple from SIGOK and SIG(n)
+ N SIGOK,SIG,SYNSIG,SYNWHY
+ S SYNSIG=PSONEW("DOSE",PSONEW("ENT"))
+ S SIGOK=1,SIG(1)=SYNSIG
+ ; Structured dosage (dose, units, noun, route, schedule, verb) so CPRS and the VPR show it; skipped when it can't be derived
+ S SYNWHY=$$DOSING(DRUG,SYNSIG,.PSONEW)
  ;
  ; Copay
  N PSOSCP S PSOSCP=""
