@@ -541,6 +541,9 @@ WRITERXPS(PSODFN,DRUG,RXDATE) ; [$$/D Public] Create a new prescription for a pa
  S PSONEW("ENT")=1
  S PSONEW("DOSE",PSONEW("ENT"))="ONE TABLET DAILY"
  ;
+ ; Free-text sig: PSON52 files the SIG1 multiple from SIGOK and SIG(n)
+ N SIGOK,SIG S SIGOK=1,SIG(1)=PSONEW("DOSE",PSONEW("ENT"))
+ ;
  ; Copay
  N PSOSCP S PSOSCP=""
  ;
