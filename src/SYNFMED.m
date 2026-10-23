@@ -579,7 +579,7 @@ MEDDEFT(DRUG) ; [Public] Show what MEDDEF returns for a drug IEN (use on dev to 
  Q
  ;
 DOSING(DRUG,SIG,PSONEW) ; [$$ Public] Fill the structured dosage in PSONEW from the drug's strength and the sig text
- ; Oral tablets and capsules only; "" when PSONEW(DOSE,DOSE ORDERED,UNITS,NOUN,VERB and, when found, ROUTE and SCHEDULE) was set,
+ ; Tablets and capsules, plus drugs named in NOUNKEY; "" when PSONEW(DOSE,DOSE ORDERED,UNITS,NOUN,VERB and, when found, ROUTE and SCHEDULE) was set,
  ; otherwise the reason it was left alone (PSONEW is not touched then).
  ; Input: DRUG = Drug (file 50) IEN; SIG = directions text, e.g. TAKE ONE TABLET BY MOUTH TWICE A DAY
  N STR,UNIT,UPTR,DU,NOUN,CNT,W,SIGU,ROW,I,J,CAND,ROUTE,SCHED,VERB
@@ -590,7 +590,9 @@ DOSING(DRUG,SIG,PSONEW) ; [$$ Public] Fill the structured dosage in PSONEW from 
  S UPTR=$O(^PS(50.607,"B",UNIT,0)) I 'UPTR Q "unit-not-in-50.607"
  S DU=$$UP^XLFSTR($$GET1^DIQ(50,DRUG_",",14.5))
  S NOUN=$S(DU="TAB"!(DU="TABLET"):"TABLET",DU="CAP"!(DU="CAPSULE"):"CAPSULE",1:"")
- I NOUN="" Q "not-oral-solid"
+ I NOUN="" D  I NOUN="" Q "not-oral-solid"
+ . N NM,ROW,K S NM=$$UP^XLFSTR($$GET1^DIQ(50,DRUG_",",.01))
+ . F K=1:1 S ROW=$P($T(NOUNKEY+K),";;",2) Q:ROW=""  I NM[$P(ROW,U) S NOUN=$P(ROW,U,2) Q
  S SIGU=$$UP^XLFSTR(SIG),W=$P(SIGU," ",2)
  S CNT=$S(W?1.N:+W,W="ONE":1,W="TWO":2,W="THREE":3,1:1)
  S VERB=$P(SIGU," ")
@@ -628,6 +630,9 @@ SCHEDKEY ; Sig phrase^schedule names to try in ADMINISTRATION SCHEDULE (#51.1), 
  ;;EVERY 12 HOURS^Q12H
  ;;EVERY DAY^QDAY^DAILY^QD
  ;;ONCE A DAY^QDAY^DAILY^QD
+ ;
+NOUNKEY ; Drug name phrase^dose noun, for drugs that are not tablets or capsules (strength and unit must still be set on the drug)
+ ;;ORAL SPRAY^SPRAY
  ;
 MEDDEFNAME ;;
  ;;INSULIN^30^5^^1^INJECT 20 UNITS UNDER THE SKIN TWICE A DAY BEFORE MEALS
