@@ -596,17 +596,21 @@ DOSING(DRUG,SIG,PSONEW) ; [$$ Public] Fill the structured dosage in PSONEW from 
  S SIGU=$$UP^XLFSTR(SIG),W=$P(SIGU," ",2)
  S CNT=$S(W?1.N:+W,W="ONE":1,W="TWO":2,W="THREE":3,1:1)
  S VERB=$P(SIGU," ")
- S ROUTE=""
- F I=1:1 S ROW=$P($T(ROUTEKEY+I),";;",2) Q:ROW=""  I SIGU[$P(ROW,U) D  Q:ROUTE
- . F J=2:1:$L(ROW,U) S CAND=$P(ROW,U,J) I CAND]"" S ROUTE=$O(^PS(51.2,"B",CAND,0)) Q:ROUTE
- S SCHED=""
- F I=1:1 S ROW=$P($T(SCHEDKEY+I),";;",2) Q:ROW=""  I SIGU[$P(ROW,U) D  Q:SCHED]""
- . F J=2:1:$L(ROW,U) S CAND=$P(ROW,U,J) I CAND]"",$O(^PS(51.1,"B",CAND,0)) S SCHED=CAND Q
+ S ROUTE="",SCHED="" D ROUTESCH(SIG,.ROUTE,.SCHED)
  S PSONEW("DOSE",1)=STR*CNT,PSONEW("DOSE ORDERED",1)=CNT,PSONEW("UNITS",1)=UPTR
  S PSONEW("NOUN",1)=NOUN,PSONEW("VERB",1)=VERB
  I ROUTE S PSONEW("ROUTE",1)=ROUTE
  I SCHED]"" S PSONEW("SCHEDULE",1)=SCHED
  Q ""
+ ;
+ROUTESCH(SIG,ROUTE,SCHED) ; [Public] Route (file 51.2 IEN, or "") and schedule (file 51.1 name, or "") that the sig text maps to, with or without a dose
+ N SIGU,ROW,I,J,CAND
+ S SIGU=$$UP^XLFSTR(SIG),ROUTE="",SCHED=""
+ F I=1:1 S ROW=$P($T(ROUTEKEY+I),";;",2) Q:ROW=""  I SIGU[$P(ROW,U) D  Q:ROUTE
+ . F J=2:1:$L(ROW,U) S CAND=$P(ROW,U,J) I CAND]"" S ROUTE=$O(^PS(51.2,"B",CAND,0)) Q:ROUTE
+ F I=1:1 S ROW=$P($T(SCHEDKEY+I),";;",2) Q:ROW=""  I SIGU[$P(ROW,U) D  Q:SCHED]""
+ . F J=2:1:$L(ROW,U) S CAND=$P(ROW,U,J) I CAND]"",$O(^PS(51.1,"B",CAND,0)) S SCHED=CAND Q
+ Q
  ;
 DOSINGT(DRUG,SIG) ; [Public] Show what DOSING gives for a drug IEN and sig (use on dev to check the lookups)
  N PSONEW,WHY S WHY=$$DOSING(DRUG,$G(SIG,"TAKE ONE TABLET BY MOUTH EVERY DAY"),.PSONEW)
@@ -615,8 +619,11 @@ DOSINGT(DRUG,SIG) ; [Public] Show what DOSING gives for a drug IEN and sig (use 
  Q
  ;
 ROUTEKEY ; Sig phrase^route names to try in MEDICATION ROUTES (#51.2), first one found wins
+ ;;INHALE^INHALATION
  ;;BY MOUTH^ORAL (BY MOUTH)^ORAL^PO
  ;;UNDER THE TONGUE^SL^SUBLINGUAL
+ ;;UNDER THE SKIN^SUBCUTANEOUS
+ ;;TO THE SKIN^TRANSDERMAL
  ;
 SCHEDKEY ; Sig phrase^schedule names to try in ADMINISTRATION SCHEDULE (#51.1), first one found wins; longer phrases first
  ;;TWICE A DAY^BID
@@ -628,6 +635,8 @@ SCHEDKEY ; Sig phrase^schedule names to try in ADMINISTRATION SCHEDULE (#51.1), 
  ;;EVERY 6 HOURS^Q6H
  ;;EVERY 8 HOURS^Q8H
  ;;EVERY 12 HOURS^Q12H
+ ;;EVERY 72 HOURS^Q72H
+ ;;ONCE A WEEK^QW^WEEKLY
  ;;EVERY DAY^QDAY^DAILY^QD
  ;;ONCE A DAY^QDAY^DAILY^QD
  ;
