@@ -658,6 +658,7 @@ MEDDEFNAME ;;
  ;
 MEDDEFCLASS ;;
  ;;CV800^90^3^1^^TAKE ONE TABLET BY MOUTH EVERY DAY
+ ;;CV200^90^3^1^^TAKE ONE TABLET BY MOUTH EVERY DAY
  ;;CV805^90^3^1^^TAKE ONE TABLET BY MOUTH EVERY DAY
  ;;CV350^90^3^1^^TAKE ONE TABLET BY MOUTH EVERY EVENING
  ;;CV701^90^3^1^^TAKE ONE TABLET BY MOUTH EVERY MORNING
@@ -739,6 +740,8 @@ WRITERXPS(PSODFN,DRUG,RXDATE) ; [$$/D Public] Create a new prescription for a pa
  S SIGOK=1,SIG(1)=SYNSIG
  ; Structured dosage (dose, units, noun, route, schedule, verb) so CPRS and the VPR show it; skipped when it can't be derived
  S SYNWHY=$$DOSING(DRUG,SYNSIG,.PSONEW)
+ ; No dose could be derived (no strength, liquid, gel, injectable): still file route and schedule from the sig
+ I SYNWHY]"" N SYNRT,SYNSC D ROUTESCH(SYNSIG,.SYNRT,.SYNSC) S:$G(SYNRT) PSONEW("ROUTE",1)=SYNRT S:$G(SYNSC)]"" PSONEW("SCHEDULE",1)=SYNSC
  ;
  ; Copay
  N PSOSCP S PSOSCP=""
