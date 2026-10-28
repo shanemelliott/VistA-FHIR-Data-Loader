@@ -152,7 +152,8 @@ wsIntakeConditions(args,body,result,ien)        ; web service entry (post)
  . ;
  . ; determine clinical status (active vs inactive)
  . ;
- . n clinicalstatus set clinicalstatus=$get(json("entry",zi,"resource","clinicalStatus"))
+ . n clinicalstatus set clinicalstatus=$$LOW^XLFSTR($get(json("entry",zi,"resource","clinicalStatus")))
+ . i clinicalstatus="" set clinicalstatus=$$LOW^XLFSTR($get(json("entry",zi,"resource","clinicalStatus","coding",1,"code"))) ; R4 coded concept
  . i $get(abatementdate)'="" set clinicalstatus="inactive" ; VistA doesn't allow active problems with a resolution date
  . ;
  . ; determine the encounter visit ien
@@ -184,7 +185,7 @@ wsIntakeConditions(args,body,result,ien)        ; web service entry (post)
  . s DHPSCT=sctcode
  . s eval("conditions",zi,"parms","DHPSCT")=DHPSCT
  . ;
- . s DHPCLNST=$S(clinicalstatus="Active":"A",1:"I")
+ . s DHPCLNST=$S(clinicalstatus="active":"A",1:"I")
  . s eval("conditions",zi,"parms","DHPCLNST")=DHPCLNST
  . ;
  . s DHPONS=hl7OnsetDateTime
